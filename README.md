@@ -89,7 +89,7 @@ _Note:_ you don't _need_ to use a `.env` file. As long as the [required variable
 
 Running Interval Server in production is largely the same as running in development. For convenience, we've created a Docker image to make this even easier.
 
-The Interval Server Docker image is: `docker.io/alexarena/interval-server:latest`.
+The Interval Server Docker image is: `docker.io/cornerhealth/interval-server:latest`.
 
 If you're looking for a quick and cheap deployment option, check out the community-made [Railway template](https://railway.com/template/tFqAVW?referralCode=chIZYq) which offers simple one-click deployment.
 

@@ -604,9 +604,51 @@ export function setupWebSocketServer(wss: WebSocketServer) {
               numPollsRemaining -= 1
             }
 
+            // Declared out here so the rollback helper and catch can reach it.
+            let host: ConnectedHost | undefined
+
+            // Undo the optimistic in-memory claim made below if initialization
+            // fails, but only if it still points at this connection (a newer
+            // reconnect with the same ws.id may have already replaced it).
+            const rollbackHostClaim = () => {
+              if (host && connectedHosts.get(ws.id) === host) {
+                connectedHosts.delete(ws.id)
+                apiKeyHostIds.get(host.apiKeyId)?.delete(ws.id)
+              }
+            }
+
             try {
               pendingInitializationTimestamps.delete(timestamp)
               initializingHost = true
+
+              // Publish the in-memory claim BEFORE writing the DB row. A
+              // concurrent handleClose for a superseded connection (same ws.id)
+              // decides whether to delete the HostInstance row based on
+              // connectedHosts. Claiming first guarantees the invariant "row
+              // exists in DB ⟹ connectedHosts holds this connection", so the
+              // old connection can never delete a row this one just wrote.
+              host = {
+                apiKeyId: auth.apiKey.id,
+                usageEnvironment: auth.apiKey.usageEnvironment,
+                organizationEnvironment: auth.organizationEnvironment,
+                user: auth.user,
+                organization: auth.organization,
+                rpc,
+                ws,
+                pageKeys: new Set(),
+                sdkName,
+                sdkVersion,
+              }
+              connectedHosts.set(ws.id, host)
+              {
+                let keyIds = apiKeyHostIds.get(auth.apiKey.id)
+                if (!keyIds) {
+                  keyIds = new Set()
+                  apiKeyHostIds.set(auth.apiKey.id, keyIds)
+                }
+
+                keyIds.add(ws.id)
+              }
 
               const hostInstance = await prisma.hostInstance.upsert({
                 where: { id: ws.id },
@@ -692,6 +734,7 @@ export function setupWebSocketServer(wss: WebSocketServer) {
                   httpHostRequest.invalidAt ||
                   httpHostRequest.createdAt < oneMinuteAgo
                 ) {
+                  rollbackHostClaim()
                   return initializationFailure('Invalid action request')
                 }
               } else {
@@ -782,29 +825,6 @@ export function setupWebSocketServer(wss: WebSocketServer) {
                   })
               }
 
-              const host: ConnectedHost = {
-                apiKeyId: auth.apiKey.id,
-                usageEnvironment: auth.apiKey.usageEnvironment,
-                organizationEnvironment: auth.organizationEnvironment,
-                user: auth.user,
-                organization: auth.organization,
-                rpc,
-                ws,
-                pageKeys: new Set(),
-                sdkName,
-                sdkVersion,
-              }
-              connectedHosts.set(ws.id, host)
-              {
-                let keyIds = apiKeyHostIds.get(auth.apiKey.id)
-                if (!keyIds) {
-                  keyIds = new Set()
-                  apiKeyHostIds.set(auth.apiKey.id, keyIds)
-                }
-
-                keyIds.add(ws.id)
-              }
-
               logger.verbose('Host connected', {
                 instanceId: ws.id,
                 organizationId: auth?.organization?.id,
@@ -842,6 +862,7 @@ export function setupWebSocketServer(wss: WebSocketServer) {
                 organizationId: auth?.organization?.id,
                 error,
               })
+              rollbackHostClaim()
               return initializationFailure('Internal Server Error')
             }
           },
@@ -2662,8 +2683,13 @@ export function setupWebSocketServer(wss: WebSocketServer) {
             }
           }
 
-          connectedClients.delete(ws.id)
-          userClientIds.get(client.user.id)?.delete(ws.id)
+          // Only remove the in-memory entry if it still points at this
+          // connection. A reconnect with the same ws.id may have already
+          // replaced it, and we must not delete the new connection's entry.
+          if (connectedClients.get(ws.id) === client) {
+            connectedClients.delete(ws.id)
+            userClientIds.get(client.user.id)?.delete(ws.id)
+          }
 
           const transactions = await prisma.transaction.findMany({
             where: {
@@ -2710,8 +2736,15 @@ export function setupWebSocketServer(wss: WebSocketServer) {
             data: { currentClientId: null },
           })
         } else if (host) {
-          connectedHosts.delete(ws.id)
-          apiKeyHostIds.get(host.apiKeyId)?.delete(ws.id)
+          // Only remove the in-memory entry if it still points at this
+          // connection. A reconnect with the same ws.id may have already
+          // replaced it, and we must not delete the new connection's entry
+          // (doing so would also defeat the connectedHosts.has guards below
+          // that protect the HostInstance row from being deleted).
+          if (connectedHosts.get(ws.id) === host) {
+            connectedHosts.delete(ws.id)
+            apiKeyHostIds.get(host.apiKeyId)?.delete(ws.id)
+          }
 
           let inProgressTransactions: Transaction[]
           if (host.usageEnvironment === 'DEVELOPMENT') {

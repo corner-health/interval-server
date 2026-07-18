@@ -260,7 +260,9 @@ export async function handleWebhook(webhook: Webhook) {
 
       await prisma.userAccessGroupMembership.deleteMany({
         where: {
-          id: user.id,
+          userOrganizationAccess: {
+            userId: user.id,
+          },
         },
       })
 
@@ -414,7 +416,7 @@ export async function handleWebhook(webhook: Webhook) {
 }
 
 router.post('*', async (req, res) => {
-  if (!workos || isWorkOSEnabled || !env.WORKOS_WEBHOOK_SECRET) {
+  if (!workos || !isWorkOSEnabled || !env.WORKOS_WEBHOOK_SECRET) {
     logger.error('WorkOS credentials not found, aborting', {
       path: req.path,
     })

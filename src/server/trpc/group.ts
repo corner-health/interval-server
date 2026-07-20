@@ -184,7 +184,7 @@ export const groupRouter = createRouter()
         })
       }
 
-      const [, , deletedGroup] = await prisma.$transaction([
+      const [, , , deletedGroup] = await prisma.$transaction([
         prisma.userAccessGroupMembership.deleteMany({
           where: {
             groupId: id,
@@ -192,6 +192,12 @@ export const groupRouter = createRouter()
         }),
 
         prisma.actionAccess.deleteMany({
+          where: {
+            userAccessGroupId: id,
+          },
+        }),
+
+        prisma.actionGroupAccess.deleteMany({
           where: {
             userAccessGroupId: id,
           },

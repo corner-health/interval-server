@@ -315,6 +315,16 @@ export async function handleWebhook(webhook: Webhook) {
             groupId: group.id,
           },
         }),
+        prisma.actionAccess.deleteMany({
+          where: {
+            userAccessGroupId: group.id,
+          },
+        }),
+        prisma.actionGroupAccess.deleteMany({
+          where: {
+            userAccessGroupId: group.id,
+          },
+        }),
         prisma.userAccessGroup.delete({
           where: {
             id: group.id,

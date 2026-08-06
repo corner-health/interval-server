@@ -58,6 +58,24 @@ export const pendingIOCalls = new Map<string, string>()
 export const transactionLoadingStates = new Map<string, LoadingState>()
 export const transactionRedirects = new Map<string, LinkProps>()
 
+/**
+ * Returns the registered connection only when it belongs to the given socket.
+ *
+ * Reconnecting sockets reuse their stable ID, so looking up an ID alone can
+ * return the replacement connection while an older socket is closing.
+ */
+export function getConnectionForSocket<
+  TSocket extends { id: string },
+  TConnection extends { ws: TSocket }
+>(
+  connections: ReadonlyMap<string, TConnection>,
+  socket: TSocket
+): TConnection | undefined {
+  const connection = connections.get(socket.id)
+
+  return connection?.ws === socket ? connection : undefined
+}
+
 export function cloneSocket(
   socket: ConnectedSocket & { usageEnvironment?: UsageEnvironment }
 ) {

@@ -88,6 +88,7 @@ import {
   transactionLoadingStates,
   transactionRedirects,
   ServerRPCClient,
+  getConnectionForSocket,
 } from './processVars'
 import { DEVELOPMENT_ORG_ENV_SLUG } from '~/utils/environments'
 
@@ -2607,8 +2608,11 @@ export function setupWebSocketServer(wss: WebSocketServer) {
       if (closed) return
       closed = true
 
-      const client = connectedClients.get(ws.id)
-      const host = connectedHosts.get(ws.id)
+      // Reconnecting sockets reuse the same ID. Only clean up shared state when
+      // the closing socket still owns the current registration; otherwise this
+      // close event belongs to a superseded connection.
+      const client = getConnectionForSocket(connectedClients, ws)
+      const host = getConnectionForSocket(connectedHosts, ws)
 
       const logProps: Record<string, string | number | undefined | null> = {
         instanceId: ws.id,
